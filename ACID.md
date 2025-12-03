@@ -239,3 +239,47 @@ A store has a rule:
 3. Right side: **After Commit or Rollback** → Total updated → ✅ consistent
    OR rollback → Back to original → ✅ consistent
 
+
+
+# **Durability**
+
+**Meaning:**
+Once a transaction is **committed**, its changes are permanent.
+Even if the system crashes, the committed data will **never be lost**.
+
+Durability is what gives us confidence that the database is reliable.
+
+---
+
+# **Example: Sales Transaction**
+
+**Scenario:**
+A customer buys a product for **500 TK**.
+
+1. Transaction begins
+2. Deduct 1 item from inventory
+3. Add 500 TK to Total Sales
+4. Commit transaction ✅
+
+---
+
+### **Now, imagine a crash happens immediately after commit**
+
+* Server power goes out
+* Database restarts
+
+**Durability ensures:**
+
+* The inventory still shows **1 item less**
+* Total Sales still includes the **500 TK**
+* No data is lost even though the system crashed
+
+---
+
+# **Summary**
+
+* Durability = committed data is permanent
+* Achieved using **logs, write-ahead logs, or journals**
+* Protects against **power failures, crashes, and hardware issues**
+
+
