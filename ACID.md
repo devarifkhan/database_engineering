@@ -84,7 +84,7 @@ This is atomicity again — even in a crash, the database won’t keep partial u
 
 
 
-# **Isolation **
+# **Isolation**
 
 Isolation means:
 **Even if many users run transactions at the same time, each transaction should behave as if it’s the only one running.**
