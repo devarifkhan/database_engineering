@@ -84,3 +84,115 @@ This is atomicity again — even in a crash, the database won’t keep partial u
 
 
 
+# **Isolation **
+
+Isolation means:
+**Even if many users run transactions at the same time, each transaction should behave as if it’s the only one running.**
+
+Without isolation, people would see half-updated data, inconsistent values, or overwritten changes.
+
+Databases handle this using **isolation levels**.
+
+---
+
+# **Read Phenomena (the problems isolation prevents)**
+
+Below are the four common problems — all explained using **sales examples**.
+
+---
+
+## **1. Dirty Read — (Reading uncommitted data)**
+
+**Meaning:**
+One transaction reads data that another transaction has changed **but not committed yet**.
+
+If that other transaction rolls back, the first transaction has already seen **wrong/temporary data**.
+
+### **Sales Example**
+
+* Transaction A updates a product price from **1000 TK → 800 TK**, but hasn’t committed yet.
+* Transaction B reads the price and shows the customer **800 TK**.
+* Transaction A fails and rolls back → the actual price stays **1000 TK**.
+
+Transaction B relied on a value that was **never real**. That’s a dirty read.
+
+---
+
+## **2. Non-Repeatable Read — (Value changes between two reads)**
+
+**Meaning:**
+A transaction reads the same row twice, but the value changes in between because another transaction updated it.
+
+### **Sales Example**
+
+* Transaction A checks the price of a phone: **1000 TK**.
+* Transaction B updates the price to **1100 TK** and commits.
+* Transaction A checks the price again in the same session → now sees **1100 TK**.
+
+Transaction A couldn’t “repeat” the same read.
+The same row gave two different values.
+
+---
+
+## **3. Phantom Read — (New rows appear)**
+
+**Meaning:**
+A transaction reads a set of rows based on a condition, and on a later read, **new rows matching that condition appear** because another transaction inserted them.
+
+### **Sales Example**
+
+* Transaction A runs:
+  “Show me all orders today above 500 TK.” → Gets **10 orders**.
+* Transaction B inserts **2 new orders** above 500 TK and commits.
+* Transaction A runs the same query again → now sees **12 orders**.
+
+The extra rows are “phantoms” — they appear out of nowhere.
+
+---
+
+## **4. Lost Update — (One update overwrites another)**
+
+**Meaning:**
+Two transactions update the same value at the same time, and one update **overwrites** the other without knowing it.
+
+### **Sales Example**
+
+* Inventory for a product = **10 units**.
+* Transaction A updates quantity to **8** after a sale.
+* Transaction B updates quantity to **9** after a separate sale.
+* Whichever commits last overwrites the other.
+
+Final quantity may become **9**, even though **both sales happened**, and it should have been **7**.
+
+This is a lost update.
+
+---
+
+# **Isolation Levels (from weakest to strongest)**
+
+These control how much of the above problems are allowed or prevented.
+
+| **Isolation Level**  | Dirty Read  | Non-Repeatable Read | Phantom Read | Lost Update |
+| -------------------- | ----------- | ------------------- | ------------ | ----------- |
+| **Read Uncommitted** | ❌ Allowed   | ❌ Allowed           | ❌ Allowed    | ❌ Allowed   |
+| **Read Committed**   | ✔ Prevented | ❌ Allowed           | ❌ Allowed    | ❌ Allowed   |
+| **Repeatable Read**  | ✔ Prevented | ✔ Prevented         | ❌ Allowed    | ❌ Allowed   |
+| **Serializable**     | ✔ Prevented | ✔ Prevented         | ✔ Prevented  | ✔ Prevented |
+
+### Quick summary:
+
+* **Read Uncommitted** → “I don’t care, show me anything.”
+* **Read Committed** → “Don’t show me uncommitted data.”
+* **Repeatable Read** → “If I read a row, don’t let it change.”
+* **Serializable** → “Treat everything like it’s single-threaded.”
+
+---
+
+# **Short, clean summary**
+
+* **Isolation** protects transactions from interfering with each other.
+* **Dirty reads**: reading uncommitted values.
+* **Non-repeatable reads**: reading same row twice but value changes.
+* **Phantom reads**: new rows appear between two queries.
+* **Lost updates**: one update overwrites another.
+* **Isolation levels** decide how much protection you get.
