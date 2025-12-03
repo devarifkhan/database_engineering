@@ -196,3 +196,46 @@ These control how much of the above problems are allowed or prevented.
 * **Phantom reads**: new rows appear between two queries.
 * **Lost updates**: one update overwrites another.
 * **Isolation levels** decide how much protection you get.
+
+
+
+
+
+# **Consistency in Databases**
+
+**Scenario:**
+A store has a rule:
+
+> “The total sales amount must always equal the sum of individual orders.”
+
+### **Before Transaction:**
+
+* Orders Table:
+
+  | Order ID | Amount |
+  | -------- | ------ |
+  | 1        | 100 TK |
+  | 2        | 200 TK |
+* Total Sales in Summary Table: 300 TK ✅ (consistent)
+
+---
+
+### **Transaction Example**
+
+* New order comes in: 150 TK
+* Step 1: Insert order → Orders Table now has 3 orders
+* Step 2: Update Total Sales → Should become 450 TK
+
+**If step 2 fails** → Total Sales = 300 TK but orders sum = 450 TK ❌ (inconsistent)
+
+**Consistency ensures:** Either both steps succeed, or neither.
+
+---
+
+### **Visual Idea for the Picture**
+
+1. Left side: **Before Transaction** → Orders + Total match
+2. Middle: **During Transaction** → Orders added, Total not updated yet
+3. Right side: **After Commit or Rollback** → Total updated → ✅ consistent
+   OR rollback → Back to original → ✅ consistent
+
