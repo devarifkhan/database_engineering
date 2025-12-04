@@ -119,3 +119,42 @@ UPDATE bank_account SET balance = balance + 200 WHERE
 account_name = 'Account B';
 COMMIT;
 This transaction follows the constraint that no account can have a negative balance, so it completes successfully. The balances are updated correctly without violating the consistency of the database.
+
+
+Isolation Example
+Let’s run two simultaneous transactions that attempt to update the same row. Without proper isolation, these could interfere with each other.
+
+Open two separate PostgreSQL sessions (using the same docker exec command). Run the following commands in each:
+
+Session 1:
+
+postgres=# BEGIN;
+
+-- Select balance of Account A
+SELECT * FROM bank_account WHERE account_name = 'Account A';
+
+-- Deduct $100 from Account A
+UPDATE bank_account SET balance = balance - 100 WHERE account_name = 'Account A';
+BEGIN
+ id | account_name | balance 
+----+--------------+---------
+  1 | Account A    |    1000
+(1 row)
+
+
+
+-- Do not commit yet; leave the transaction open
+Session 2:
+
+postgres=# BEGIN;
+BEGIN
+postgres=*# SELECT * FROM bank_account WHERE account_name = 'Account A';
+ id | account_name | balance 
+----+--------------+---------
+  1 | Account A    |    1000
+(1 row)
+
+postgres=*# UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
+
+COMMIT;
+You’ll see that Session 2 is blocked until Session 1 completes, demonstrating the isolation property. PostgreSQL uses isolation to prevent inconsistent results due to concurrent transactions.
