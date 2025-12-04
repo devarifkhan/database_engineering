@@ -71,3 +71,43 @@ SELECT * FROM bank_account;
 
 This demonstrates atomicity: either the entire transaction is completed, or no changes are made at all, preserving database integrity.
 
+
+Consistency
+
+Consistency ensures that a database remains in a valid state before and after a transaction, meaning any transaction will take the database from one valid state to another. It guarantees that all predefined rules, such as constraints, are respected.
+
+Setup:
+
+To enforce consistency, we will add a CHECK constraint to ensure that the balance in any account can never be less than zero.
+
+Modify the bank_account table to include this constraint:
+
+ALTER TABLE bank_account
+ADD CONSTRAINT positive_balance CHECK (balance >= 0);
+
+This rule guarantees that no transaction can result in a negative balance for any account, ensuring the database’s consistency.
+
+
+Testing Consistency:
+
+
+Let’s try to transfer more money from Account A than its current balance to see how the consistency is maintained.
+
+Start a transaction:
+
+BEGIN;
+
+
+Attempt to transfer $1000 from Account A (which only has $800):
+
+UPDATE bank_account SET balance = balance - 1000 WHERE account_name = 'Account A';
+
+UPDATE bank_account SET balance = balance + 1000 WHERE account_name = 'Account B';
+
+Since Account A only has $800, the CHECK constraint will prevent this transaction from violating the rule:
+
+ERROR:  new row for relation "bank_account" violates check constraint "positive_balance"
+DETAIL:  Failing row contains (1, Account A, -200).
+This error occurs because the operation would have resulted in a negative balance, which violates the consistency rule we set.
+
+
