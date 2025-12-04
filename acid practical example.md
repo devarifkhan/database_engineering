@@ -158,3 +158,25 @@ postgres=*# UPDATE bank_account SET balance = balance - 200 WHERE account_name =
 
 COMMIT;
 You’ll see that Session 2 is blocked until Session 1 completes, demonstrating the isolation property. PostgreSQL uses isolation to prevent inconsistent results due to concurrent transactions.
+
+Durability Example
+To test durability, commit a transaction and then stop the Docker container.
+
+BEGIN;
+UPDATE bank_account SET balance = balance + 500 WHERE account_name = 'Account B';
+COMMIT;
+Now stop the container:
+
+docker stop postgres-acid
+docker start postgres-acid
+Once the container restarts, reconnect and check the balance:
+
+docker exec -it postgres-acid psql -U postgres -c "SELECT * FROM bank_account;"
+The transaction’s result (the updated balance of Account B) should still be there, demonstrating durability.
+
+
+Clean Up
+Once you’re done, you can stop and remove the PostgreSQL Docker container:
+
+docker stop postgres-acid
+docker rm postgres-acid
