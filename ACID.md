@@ -1,285 +1,170 @@
-What are ACID properties in databases, and what is a database transaction? Explain both in detail.
+# ACID Properties & Database Transactions
 
-**A transaction** is a group of database operations that must be treated as one complete unit—either everything succeeds (commit) or everything is undone (rollback). To ensure reliability, databases follow **ACID properties**: **Atomicity** means all steps execute fully or not at all; **Consistency** ensures the database remains valid before and after the transaction; **Isolation** makes sure multiple transactions don’t interfere with each other; and **Durability** guarantees that once a transaction is committed, the data is permanently saved even if the system crashes.
+A **transaction** is a group of database operations treated as a single unit. Either everything succeeds (commit) or everything is undone (rollback).
 
+ACID is what makes this reliable:
 
-Here’s the same explanation rewritten in a **simple, natural, human tone**—no AI vibe, no robotic language.
-
----
-
-# **Atomicity**
-
-**Scenario:**
-You’re sending **500 TK** from **Account A** to **Account B**.
-
-A transaction for this transfer has only two steps:
-
-1. Take 500 TK from Account A
-2. Add that 500 TK to Account B
-
-These two steps must happen together. If one fails, the whole thing must be undone.
+- **Atomicity** — all or nothing
+- **Consistency** — rules are never broken
+- **Isolation** — transactions don't interfere with each other
+- **Durability** — committed data survives crashes
 
 ---
 
-## **Step-by-Step Example (covering both normal failure and system crash)**
+## Atomicity
 
-### **➤ Transaction Starts**
+You're transferring 500 TK from Account A to Account B.
+
+Two steps:
+1. Deduct 500 from A
+2. Add 500 to B
+
+Both must happen. If one fails, undo everything.
 
 ```sql
 BEGIN TRANSACTION;
-```
 
-### **➤ Step 1: Deduct 500 from Account A**
-
-```sql
 UPDATE accounts SET balance = balance - 500 WHERE id = 1;
--- success
-```
+-- success, 500 taken from A
 
-At this point, 500 has been taken from A.
-Now two different things could happen next.
-
----
-
-# **Case 1: A normal failure happens**
-
-When trying to add 500 to Account B:
-
-```sql
 UPDATE accounts SET balance = balance + 500 WHERE id = 2;
--- fails (maybe the row is locked or some rule is violated)
-```
+-- fails (row locked, constraint violated, whatever)
 
-Since the second step didn’t work, the entire transaction is undone:
-
-```sql
 ROLLBACK;
 ```
 
-### **Result**
+Result: A gets its 500 back, B receives nothing. Database looks exactly like before.
 
-* 500 goes back to Account A
-* B doesn’t receive anything
-* The database returns to the exact state before the transfer
+### What if the system crashes mid-transaction?
 
-This is **atomicity** — either all steps happen, or none of them happen.
+Say the crash happens after deducting from A but before adding to B.
 
----
+When the database restarts, it checks its transaction log, sees the transaction never completed, and rolls it back automatically.
 
-# **Case 2: The database crashes right at that moment**
-
-Imagine the system crashes **after the money is taken from A** but **before** it’s added to B.
-
-When the database comes back up, it checks its transaction logs and sees that the transaction wasn’t completed.
-
-So it automatically rolls everything back.
-
-### **Result after restart**
-
-* A gets its 500 back
-* B’s balance stays the same
-* No half-done changes are saved
-
-This is atomicity again — even in a crash, the database won’t keep partial updates.
-
-
-
-# **Isolation**
-
-Isolation means:
-**Even if many users run transactions at the same time, each transaction should behave as if it’s the only one running.**
-
-Without isolation, people would see half-updated data, inconsistent values, or overwritten changes.
-
-Databases handle this using **isolation levels**.
+Result: A gets its 500 back. No partial updates saved.
 
 ---
 
-# **Read Phenomena (the problems isolation prevents)**
+## Consistency
 
-Below are the four common problems — all explained using **sales examples**.
+The database enforces rules. Transactions that would break those rules get rejected.
 
----
+**Example rule:** Total sales must equal sum of all orders.
 
-## **1. Dirty Read — (Reading uncommitted data)**
+| Order ID | Amount |
+|----------|--------|
+| 1 | 100 TK |
+| 2 | 200 TK |
 
-**Meaning:**
-One transaction reads data that another transaction has changed **but not committed yet**.
+Summary table shows: **300 TK** ✓
 
-If that other transaction rolls back, the first transaction has already seen **wrong/temporary data**.
+New order comes in: 150 TK
 
-### **Sales Example**
+```sql
+BEGIN TRANSACTION;
+INSERT INTO orders (amount) VALUES (150);  -- orders now sum to 450
+UPDATE summary SET total_sales = 450;      -- if this fails...
+```
 
-* Transaction A updates a product price from **1000 TK → 800 TK**, but hasn’t committed yet.
-* Transaction B reads the price and shows the customer **800 TK**.
-* Transaction A fails and rolls back → the actual price stays **1000 TK**.
+If step 2 fails, you'd have orders totaling 450 but summary showing 300. Inconsistent.
 
-Transaction B relied on a value that was **never real**. That’s a dirty read.
-
----
-
-## **2. Non-Repeatable Read — (Value changes between two reads)**
-
-**Meaning:**
-A transaction reads the same row twice, but the value changes in between because another transaction updated it.
-
-### **Sales Example**
-
-* Transaction A checks the price of a phone: **1000 TK**.
-* Transaction B updates the price to **1100 TK** and commits.
-* Transaction A checks the price again in the same session → now sees **1100 TK**.
-
-Transaction A couldn’t “repeat” the same read.
-The same row gave two different values.
+Consistency ensures: either both succeed, or neither. The database never ends up in a broken state.
 
 ---
 
-## **3. Phantom Read — (New rows appear)**
+## Isolation
 
-**Meaning:**
-A transaction reads a set of rows based on a condition, and on a later read, **new rows matching that condition appear** because another transaction inserted them.
+Multiple transactions running simultaneously should behave as if they're running one at a time.
 
-### **Sales Example**
+Without isolation, you get these problems:
 
-* Transaction A runs:
-  “Show me all orders today above 500 TK.” → Gets **10 orders**.
-* Transaction B inserts **2 new orders** above 500 TK and commits.
-* Transaction A runs the same query again → now sees **12 orders**.
+### Dirty Read
 
-The extra rows are “phantoms” — they appear out of nowhere.
+Reading data that hasn't been committed yet.
 
----
+- Transaction A changes product price: 1000 → 800 (not committed)
+- Transaction B reads 800, shows it to customer
+- Transaction A rolls back, price is still 1000
 
-## **4. Lost Update — (One update overwrites another)**
+Transaction B showed a price that was never real.
 
-**Meaning:**
-Two transactions update the same value at the same time, and one update **overwrites** the other without knowing it.
+### Non-Repeatable Read
 
-### **Sales Example**
+Same row, different values on repeated reads.
 
-* Inventory for a product = **10 units**.
-* Transaction A updates quantity to **8** after a sale.
-* Transaction B updates quantity to **9** after a separate sale.
-* Whichever commits last overwrites the other.
+- Transaction A reads phone price: 1000
+- Transaction B updates price to 1100 and commits
+- Transaction A reads again: 1100
 
-Final quantity may become **9**, even though **both sales happened**, and it should have been **7**.
+Same query, two different answers within one transaction.
 
-This is a lost update.
+### Phantom Read
 
----
+New rows appear between queries.
 
-# **Isolation Levels (from weakest to strongest)**
+- Transaction A: "Show orders above 500 TK" → 10 results
+- Transaction B inserts 2 new orders above 500 and commits
+- Transaction A runs same query → 12 results
 
-These control how much of the above problems are allowed or prevented.
+Rows appeared out of nowhere.
 
-| **Isolation Level**  | Dirty Read  | Non-Repeatable Read | Phantom Read | Lost Update |
-| -------------------- | ----------- | ------------------- | ------------ | ----------- |
-| **Read Uncommitted** | ❌ Allowed   | ❌ Allowed           | ❌ Allowed    | ❌ Allowed   |
-| **Read Committed**   | ✔ Prevented | ❌ Allowed           | ❌ Allowed    | ❌ Allowed   |
-| **Repeatable Read**  | ✔ Prevented | ✔ Prevented         | ❌ Allowed    | ❌ Allowed   |
-| **Serializable**     | ✔ Prevented | ✔ Prevented         | ✔ Prevented  | ✔ Prevented |
+### Lost Update
 
-### Quick summary:
+Two updates, one gets overwritten.
 
-* **Read Uncommitted** → “I don’t care, show me anything.”
-* **Read Committed** → “Don’t show me uncommitted data.”
-* **Repeatable Read** → “If I read a row, don’t let it change.”
-* **Serializable** → “Treat everything like it’s single-threaded.”
+- Inventory = 10
+- Transaction A: sold 2 items, sets inventory to 8
+- Transaction B: sold 1 item, sets inventory to 9
+- Last commit wins
+
+Final inventory: 9. But two sales happened, so it should be 7. One update is lost.
 
 ---
 
-# **Short, clean summary**
+### Isolation Levels
 
-* **Isolation** protects transactions from interfering with each other.
-* **Dirty reads**: reading uncommitted values.
-* **Non-repeatable reads**: reading same row twice but value changes.
-* **Phantom reads**: new rows appear between two queries.
-* **Lost updates**: one update overwrites another.
-* **Isolation levels** decide how much protection you get.
+From weakest to strongest:
 
+| Level | Dirty Read | Non-Repeatable Read | Phantom Read | Lost Update |
+|-------|------------|---------------------|--------------|-------------|
+| Read Uncommitted | Allowed | Allowed | Allowed | Allowed |
+| Read Committed | Prevented | Allowed | Allowed | Allowed |
+| Repeatable Read | Prevented | Prevented | Allowed | Allowed |
+| Serializable | Prevented | Prevented | Prevented | Prevented |
 
-
-
-
-# **Consistency in Databases**
-
-**Scenario:**
-A store has a rule:
-
-> “The total sales amount must always equal the sum of individual orders.”
-
-### **Before Transaction:**
-
-* Orders Table:
-
-  | Order ID | Amount |
-  | -------- | ------ |
-  | 1        | 100 TK |
-  | 2        | 200 TK |
-* Total Sales in Summary Table: 300 TK ✅ (consistent)
+**Read Uncommitted** — no protection, see everything  
+**Read Committed** — only see committed data  
+**Repeatable Read** — rows you read won't change  
+**Serializable** — full protection, behaves like single-threaded execution
 
 ---
 
-### **Transaction Example**
+## Durability
 
-* New order comes in: 150 TK
-* Step 1: Insert order → Orders Table now has 3 orders
-* Step 2: Update Total Sales → Should become 450 TK
+Once committed, data is permanent. Crashes don't erase it.
 
-**If step 2 fails** → Total Sales = 300 TK but orders sum = 450 TK ❌ (inconsistent)
+```sql
+BEGIN TRANSACTION;
+UPDATE inventory SET quantity = quantity - 1 WHERE product_id = 42;
+UPDATE sales SET total = total + 500;
+COMMIT;
+```
 
-**Consistency ensures:** Either both steps succeed, or neither.
+Power goes out immediately after commit.
 
----
+When the database comes back up:
+- Inventory still shows 1 less item
+- Sales still includes the 500 TK
 
-### **Visual Idea for the Picture**
-
-1. Left side: **Before Transaction** → Orders + Total match
-2. Middle: **During Transaction** → Orders added, Total not updated yet
-3. Right side: **After Commit or Rollback** → Total updated → ✅ consistent
-   OR rollback → Back to original → ✅ consistent
-
-
-
-# **Durability**
-
-**Meaning:**
-Once a transaction is **committed**, its changes are permanent.
-Even if the system crashes, the committed data will **never be lost**.
-
-Durability is what gives us confidence that the database is reliable.
+Committed means saved. Databases achieve this using write-ahead logs (WAL) that persist changes to disk before confirming the commit.
 
 ---
 
-# **Example: Sales Transaction**
+## Summary
 
-**Scenario:**
-A customer buys a product for **500 TK**.
-
-1. Transaction begins
-2. Deduct 1 item from inventory
-3. Add 500 TK to Total Sales
-4. Commit transaction ✅
-
----
-
-### **Now, imagine a crash happens immediately after commit**
-
-* Server power goes out
-* Database restarts
-
-**Durability ensures:**
-
-* The inventory still shows **1 item less**
-* Total Sales still includes the **500 TK**
-* No data is lost even though the system crashed
-
----
-
-# **Summary**
-
-* Durability = committed data is permanent
-* Achieved using **logs, write-ahead logs, or journals**
-* Protects against **power failures, crashes, and hardware issues**
-
-
+| Property | What it guarantees |
+|----------|-------------------|
+| Atomicity | All steps complete or none do |
+| Consistency | Database rules are never violated |
+| Isolation | Concurrent transactions don't interfere |
+| Durability | Committed data survives crashes |
