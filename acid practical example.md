@@ -50,3 +50,24 @@ To verify that no changes were made, run the following:
 
 
 SELECT * FROM bank_account;
+
+
+You should see the original balances unchanged. Now, if you’d like to proceed with a successful transaction, you can begin a new transaction:
+
+BEGIN;
+
+Then, perform the transfer correctly:
+
+UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
+UPDATE bank_account SET balance = balance + 200 WHERE account_name = 'Account B';
+
+And finally:
+
+COMMIT;
+
+Check the balances again to confirm the transaction succeeded:
+
+SELECT * FROM bank_account;
+
+This demonstrates atomicity: either the entire transaction is completed, or no changes are made at all, preserving database integrity.
+
