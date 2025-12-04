@@ -110,4 +110,12 @@ ERROR:  new row for relation "bank_account" violates check constraint "positive_
 DETAIL:  Failing row contains (1, Account A, -200).
 This error occurs because the operation would have resulted in a negative balance, which violates the consistency rule we set.
 
+Successful Transaction:
+Now, let’s try a valid transfer that maintains consistency:
 
+BEGIN;
+UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
+UPDATE bank_account SET balance = balance + 200 WHERE 
+account_name = 'Account B';
+COMMIT;
+This transaction follows the constraint that no account can have a negative balance, so it completes successfully. The balances are updated correctly without violating the consistency of the database.
