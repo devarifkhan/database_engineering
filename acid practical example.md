@@ -1,182 +1,164 @@
-Set Up PostgreSQL with Docker
+# PostgreSQL ACID Properties
 
+A hands-on guide to understanding ACID transactions using Docker and PostgreSQL.
+
+## Setup
+
+```bash
+# Run PostgreSQL container
 docker run --name postgres-acid -e POSTGRES_PASSWORD=secret -p 5432:5432 -d postgres
 
-
-Connect to PostgreSQL
-
+# Connect to the database
 docker exec -it postgres-acid psql -U postgres
+```
 
-
-Create a Sample Table
-
+```sql
+-- Create sample table
 CREATE TABLE bank_account (
     id SERIAL PRIMARY KEY,
     account_name VARCHAR(50),
     balance NUMERIC
 );
 
--- Insert initial data
-INSERT INTO bank_account (account_name, balance) VALUES ('Account A', 1000), ('Account B', 500);
+INSERT INTO bank_account (account_name, balance) 
+VALUES ('Account A', 1000), ('Account B', 500);
+```
 
+---
 
-ACID
+## Atomicity
 
+All or nothing. If any part of a transaction fails, the entire thing rolls back.
 
-Start a transaction:
+```sql
 BEGIN;
 
-Transfer funds from Account A to Account B:
-
-
 UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
-
 UPDATE bank_account SET balance = balance + 200 WHERE account_name = 'Account B';
 
-Now, deliberately cause an error by attempting to select a non-existent table:
-
+-- Oops, let's cause an error
 SELECT invalid_column FROM non_existent_table;
+```
 
-Since this operation failed, PostgreSQL automatically places the transaction in an aborted state. Any further commands issued in this transaction will trigger the following message:
+PostgreSQL now aborts the transaction. Any further commands return:
 
-current transaction is aborted, commands ignored until end of transaction block
+```
+ERROR: current transaction is aborted, commands ignored until end of transaction block
+```
 
-To resolve this and roll back the transaction, simply run:
+```sql
 ROLLBACK;
 
-This ensures that none of the changes (including the valid ones) are applied to the database, demonstrating atomicity—the “all or nothing” rule.
-
-To verify that no changes were made, run the following:
-
-
+-- Verify nothing changed
 SELECT * FROM bank_account;
+```
 
+Both accounts retain their original balances. The partial updates never happened.
 
-You should see the original balances unchanged. Now, if you’d like to proceed with a successful transaction, you can begin a new transaction:
+### Successful Transaction
 
+```sql
 BEGIN;
-
-Then, perform the transfer correctly:
-
 UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
 UPDATE bank_account SET balance = balance + 200 WHERE account_name = 'Account B';
-
-And finally:
-
 COMMIT;
-
-Check the balances again to confirm the transaction succeeded:
 
 SELECT * FROM bank_account;
+```
 
-This demonstrates atomicity: either the entire transaction is completed, or no changes are made at all, preserving database integrity.
+---
 
+## Consistency
 
-Consistency
+The database enforces rules. Transactions that violate constraints get rejected.
 
-Consistency ensures that a database remains in a valid state before and after a transaction, meaning any transaction will take the database from one valid state to another. It guarantees that all predefined rules, such as constraints, are respected.
-
-Setup:
-
-To enforce consistency, we will add a CHECK constraint to ensure that the balance in any account can never be less than zero.
-
-Modify the bank_account table to include this constraint:
-
+```sql
+-- Add constraint: no negative balances
 ALTER TABLE bank_account
 ADD CONSTRAINT positive_balance CHECK (balance >= 0);
+```
 
-This rule guarantees that no transaction can result in a negative balance for any account, ensuring the database’s consistency.
+### Testing the Constraint
 
-
-Testing Consistency:
-
-
-Let’s try to transfer more money from Account A than its current balance to see how the consistency is maintained.
-
-Start a transaction:
-
+```sql
 BEGIN;
-
-
-Attempt to transfer $1000 from Account A (which only has $800):
-
+-- Account A has $800, trying to withdraw $1000
 UPDATE bank_account SET balance = balance - 1000 WHERE account_name = 'Account A';
+```
 
-UPDATE bank_account SET balance = balance + 1000 WHERE account_name = 'Account B';
+```
+ERROR: new row for relation "bank_account" violates check constraint "positive_balance"
+DETAIL: Failing row contains (1, Account A, -200).
+```
 
-Since Account A only has $800, the CHECK constraint will prevent this transaction from violating the rule:
+The database stays consistent—no overdrafts allowed.
 
-ERROR:  new row for relation "bank_account" violates check constraint "positive_balance"
-DETAIL:  Failing row contains (1, Account A, -200).
-This error occurs because the operation would have resulted in a negative balance, which violates the consistency rule we set.
+---
 
-Successful Transaction:
-Now, let’s try a valid transfer that maintains consistency:
+## Isolation
 
+Concurrent transactions don't interfere with each other.
+
+Open **two terminals** and connect both to PostgreSQL:
+
+```bash
+docker exec -it postgres-acid psql -U postgres
+```
+
+**Terminal 1:**
+```sql
 BEGIN;
-UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
-UPDATE bank_account SET balance = balance + 200 WHERE 
-account_name = 'Account B';
-COMMIT;
-This transaction follows the constraint that no account can have a negative balance, so it completes successfully. The balances are updated correctly without violating the consistency of the database.
-
-
-Isolation Example
-Let’s run two simultaneous transactions that attempt to update the same row. Without proper isolation, these could interfere with each other.
-
-Open two separate PostgreSQL sessions (using the same docker exec command). Run the following commands in each:
-
-Session 1:
-
-postgres=# BEGIN;
-
--- Select balance of Account A
 SELECT * FROM bank_account WHERE account_name = 'Account A';
-
--- Deduct $100 from Account A
 UPDATE bank_account SET balance = balance - 100 WHERE account_name = 'Account A';
-BEGIN
- id | account_name | balance 
-----+--------------+---------
-  1 | Account A    |    1000
-(1 row)
+-- Don't commit yet, keep this open
+```
 
+**Terminal 2:**
+```sql
+BEGIN;
+SELECT * FROM bank_account WHERE account_name = 'Account A';
+UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
+```
 
+Terminal 2 **blocks**. It waits for Terminal 1 to finish. This prevents race conditions and dirty reads.
 
--- Do not commit yet; leave the transaction open
-Session 2:
-
-postgres=# BEGIN;
-BEGIN
-postgres=*# SELECT * FROM bank_account WHERE account_name = 'Account A';
- id | account_name | balance 
-----+--------------+---------
-  1 | Account A    |    1000
-(1 row)
-
-postgres=*# UPDATE bank_account SET balance = balance - 200 WHERE account_name = 'Account A';
-
+Commit in Terminal 1 to release the lock:
+```sql
 COMMIT;
-You’ll see that Session 2 is blocked until Session 1 completes, demonstrating the isolation property. PostgreSQL uses isolation to prevent inconsistent results due to concurrent transactions.
+```
 
-Durability Example
-To test durability, commit a transaction and then stop the Docker container.
+---
 
+## Durability
+
+Committed transactions survive crashes.
+
+```sql
 BEGIN;
 UPDATE bank_account SET balance = balance + 500 WHERE account_name = 'Account B';
 COMMIT;
-Now stop the container:
+```
 
+Kill the database:
+
+```bash
 docker stop postgres-acid
 docker start postgres-acid
-Once the container restarts, reconnect and check the balance:
+```
 
+Check the data:
+
+```bash
 docker exec -it postgres-acid psql -U postgres -c "SELECT * FROM bank_account;"
-The transaction’s result (the updated balance of Account B) should still be there, demonstrating durability.
+```
 
+The +500 is still there. Committed = permanent.
 
-Clean Up
-Once you’re done, you can stop and remove the PostgreSQL Docker container:
+---
 
+## Cleanup
+
+```bash
 docker stop postgres-acid
 docker rm postgres-acid
+```
