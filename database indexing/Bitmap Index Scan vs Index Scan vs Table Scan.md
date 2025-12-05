@@ -36,3 +36,44 @@ select id, g
 from grades
 where g > 80 and g < 95
 order by g;
+
+
+postgres=# explain select name from grades where id = 1000;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Index Scan using grades_pkey on grades  (cost=0.43..8.45 rows=1 width=20)
+   Index Cond: (id = 1000)
+(2 rows)
+
+postgres=# explain select name from grades where id < 100;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Index Scan using grades_pkey on grades  (cost=0.43..11.07 rows=94 width=20)
+   Index Cond: (id < 100)
+(2 rows)
+
+postgres=# explain select name from grades where id > 100;
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Seq Scan on grades  (cost=0.00..59483.00 rows=1999905 width=20)
+   Filter: (id > 100)
+(2 rows)
+
+postgres=# explain select name from grades where g > 95;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Bitmap Heap Scan on grades  (cost=1501.10..36985.19 rows=80087 width=20)
+   Recheck Cond: (g > 95)
+   ->  Bitmap Index Scan on grades_g  (cost=0.00..1481.08 rows=80087 width=0)
+         Index Cond: (g > 95)
+(4 rows)
+
+postgres=# explain select name from grades where g > 95 and id < 10000;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Index Scan using grades_pkey on grades  (cost=0.43..467.23 rows=382 width=20)
+   Index Cond: (id < 10000)
+   Filter: (g > 95)
+(3 rows)
+
+postgres=# 
