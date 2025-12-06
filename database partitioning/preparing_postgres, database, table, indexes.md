@@ -11,3 +11,5 @@ postgres=# insert into grades_org(g) select floor(random()*100) from generate_se
 INSERT 0 1000001
 postgres=# create index grades_org_index on grades_org(g);
 CREATE INDEX
+postgres=# explain analyze select count(*) from grades_org where g = 30;
+postgres=# explain analyze select count(*) from grades_org where g between 30 and 35;
