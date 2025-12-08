@@ -1,5 +1,37 @@
 # Switching Database Engines with MySQL
 
+## Docker Setup
+
+**docker-compose.yml:**
+```yaml
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: mydb
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+```
+
+**init.sql:**
+```sql
+CREATE TABLE users (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100)) ENGINE=MyISAM;
+CREATE TABLE orders (id INT PRIMARY KEY AUTO_INCREMENT, total DECIMAL(10,2)) ENGINE=MyISAM;
+CREATE TABLE products (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100)) ENGINE=InnoDB;
+```
+
+**Commands:**
+```bash
+docker-compose up -d
+docker exec -it mysql_engines mysql -uroot -prootpass mydb
+```
+
+---
+
 ## MySQL Storage Engines
 
 ### Common Engines
