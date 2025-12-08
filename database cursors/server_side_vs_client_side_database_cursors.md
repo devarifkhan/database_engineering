@@ -303,6 +303,220 @@ cursor.close()
 conn.close()
 ```
 
+## Querying with Client-Side Cursor
+
+### Basic Query
+```python
+import psycopg2
+
+conn = psycopg2.connect(
+    host="localhost",
+    database="testdb",
+    user="postgres",
+    password="password"
+)
+
+# Client-side cursor (default)
+cursor = conn.cursor()
+
+# Execute query - all rows fetched to client immediately
+cursor.execute("SELECT * FROM users WHERE age > 30")
+
+# All data is already in client memory
+rows = cursor.fetchall()
+print(f"Total rows: {len(rows)}")
+
+for row in rows:
+    print(row)
+
+cursor.close()
+conn.close()
+```
+
+### Fetching Methods
+
+#### fetchone() - One row at a time
+```python
+cursor.execute("SELECT * FROM users LIMIT 10")
+
+while True:
+    row = cursor.fetchone()
+    if row is None:
+        break
+    print(row)
+```
+
+#### fetchmany() - Batch of rows
+```python
+cursor.execute("SELECT * FROM users")
+
+while True:
+    rows = cursor.fetchmany(100)  # Fetch 100 rows
+    if not rows:
+        break
+    
+    for row in rows:
+        process(row)
+```
+
+#### fetchall() - All rows at once
+```python
+cursor.execute("SELECT * FROM users")
+all_rows = cursor.fetchall()  # Entire result set in memory
+
+for row in all_rows:
+    print(row)
+```
+
+### Memory Considerations
+
+```python
+import psycopg2
+import sys
+
+conn = psycopg2.connect("dbname=testdb")
+cursor = conn.cursor()
+
+# Query 1 million rows
+cursor.execute("SELECT * FROM users")  # Data transferred immediately
+
+# Check memory usage
+rows = cursor.fetchall()
+print(f"Memory size: {sys.getsizeof(rows) / 1024 / 1024:.2f} MB")
+
+# Problem: All 1M rows are in client memory
+# Solution: Use server-side cursor for large datasets
+```
+
+### Iterating Over Results
+
+```python
+# Method 1: Using fetchall (loads all into memory)
+cursor.execute("SELECT * FROM users")
+for row in cursor.fetchall():
+    print(row)
+
+# Method 2: Cursor as iterator (still client-side, all data fetched)
+cursor.execute("SELECT * FROM users")
+for row in cursor:  # Iterates over already-fetched data
+    print(row)
+```
+
+### Accessing Column Data
+
+```python
+# By index
+cursor.execute("SELECT id, name, email FROM users LIMIT 5")
+for row in cursor.fetchall():
+    print(f"ID: {row[0]}, Name: {row[1]}, Email: {row[2]}")
+
+# Using DictCursor for named access
+from psycopg2.extras import DictCursor
+
+cursor = conn.cursor(cursor_factory=DictCursor)
+cursor.execute("SELECT id, name, email FROM users LIMIT 5")
+
+for row in cursor.fetchall():
+    print(f"ID: {row['id']}, Name: {row['name']}, Email: {row['email']}")
+
+# Using RealDictCursor for dictionary access
+from psycopg2.extras import RealDictCursor
+
+cursor = conn.cursor(cursor_factory=RealDictCursor)
+cursor.execute("SELECT id, name, email FROM users LIMIT 5")
+
+for row in cursor.fetchall():
+    print(row)  # {'id': 1, 'name': 'User1', 'email': 'user1@example.com'}
+```
+
+### Parameterized Queries
+
+```python
+# Safe from SQL injection
+user_id = 100
+cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+row = cursor.fetchone()
+
+# Multiple parameters
+min_age = 25
+max_age = 35
+cursor.execute(
+    "SELECT * FROM users WHERE age BETWEEN %s AND %s",
+    (min_age, max_age)
+)
+rows = cursor.fetchall()
+```
+
+### Performance Tips for Client-Side Queries
+
+```python
+# 1. Limit result set size
+cursor.execute("SELECT * FROM users LIMIT 1000")  # Don't fetch millions
+
+# 2. Select only needed columns
+cursor.execute("SELECT id, name FROM users")  # Not SELECT *
+
+# 3. Use WHERE clauses to filter on server
+cursor.execute("SELECT * FROM users WHERE age > 30")  # Filter server-side
+
+# 4. Use indexes for faster queries
+cursor.execute("SELECT * FROM users WHERE email = %s", (email,))  # Indexed column
+
+# 5. Close cursor when done
+cursor.close()
+```
+
+### When Client-Side Cursor Fails
+
+```python
+# Problem: Query returns 10 million rows
+try:
+    cursor.execute("SELECT * FROM huge_table")  # Tries to fetch all
+    rows = cursor.fetchall()  # MemoryError!
+except MemoryError:
+    print("Out of memory! Use server-side cursor instead")
+
+# Solution: Use server-side cursor (next section)
+```
+
+### Complete Example
+
+```python
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+def query_users(min_age, max_age):
+    conn = psycopg2.connect(
+        host="localhost",
+        database="testdb",
+        user="postgres",
+        password="password"
+    )
+    
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        cursor.execute(
+            "SELECT id, name, email, age FROM users WHERE age BETWEEN %s AND %s",
+            (min_age, max_age)
+        )
+        
+        # Process in batches to avoid memory issues
+        while True:
+            rows = cursor.fetchmany(1000)
+            if not rows:
+                break
+            
+            for row in rows:
+                print(f"{row['name']}: {row['email']} (Age: {row['age']})")
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+query_users(25, 35)
+```
+
 ## Conclusion
 
 Choose based on your specific requirements:
