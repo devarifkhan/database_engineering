@@ -135,6 +135,174 @@ rows = cursor.fetchall()
 # Can cause memory exhaustion
 ```
 
+## Inserting Million Rows with Python in Postgres using Client-Side Cursor
+
+### Setup
+```python
+import psycopg2
+import time
+
+conn = psycopg2.connect(
+    host="localhost",
+    database="testdb",
+    user="postgres",
+    password="password"
+)
+cursor = conn.cursor()
+
+# Create table
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100),
+        email VARCHAR(100),
+        age INTEGER
+    )
+""")
+conn.commit()
+```
+
+### Method 1: Individual Inserts (Slow - Don't Use)
+```python
+start = time.time()
+
+for i in range(1000000):
+    cursor.execute(
+        "INSERT INTO users (name, email, age) VALUES (%s, %s, %s)",
+        (f"User{i}", f"user{i}@example.com", 25 + (i % 50))
+    )
+    conn.commit()  # Commit each insert
+
+print(f"Time: {time.time() - start:.2f}s")  # ~hours
+```
+
+### Method 2: Batch Inserts (Better)
+```python
+start = time.time()
+batch_size = 1000
+
+for i in range(0, 1000000, batch_size):
+    values = [
+        (f"User{j}", f"user{j}@example.com", 25 + (j % 50))
+        for j in range(i, min(i + batch_size, 1000000))
+    ]
+    
+    cursor.executemany(
+        "INSERT INTO users (name, email, age) VALUES (%s, %s, %s)",
+        values
+    )
+    conn.commit()
+
+print(f"Time: {time.time() - start:.2f}s")  # ~minutes
+```
+
+### Method 3: execute_batch (Faster)
+```python
+from psycopg2.extras import execute_batch
+
+start = time.time()
+
+data = [
+    (f"User{i}", f"user{i}@example.com", 25 + (i % 50))
+    for i in range(1000000)
+]
+
+execute_batch(
+    cursor,
+    "INSERT INTO users (name, email, age) VALUES (%s, %s, %s)",
+    data,
+    page_size=1000
+)
+conn.commit()
+
+print(f"Time: {time.time() - start:.2f}s")  # ~30-60 seconds
+```
+
+### Method 4: COPY (Fastest)
+```python
+from io import StringIO
+
+start = time.time()
+
+# Create CSV data in memory
+csv_data = StringIO()
+for i in range(1000000):
+    csv_data.write(f"User{i},user{i}@example.com,{25 + (i % 50)}\n")
+csv_data.seek(0)
+
+# Use COPY command
+cursor.copy_from(
+    csv_data,
+    'users',
+    columns=('name', 'email', 'age'),
+    sep=','
+)
+conn.commit()
+
+print(f"Time: {time.time() - start:.2f}s")  # ~5-10 seconds
+
+cursor.close()
+conn.close()
+```
+
+### Performance Comparison
+
+| Method | Time (1M rows) | Notes |
+|--------|----------------|-------|
+| Individual inserts | Hours | Never use |
+| executemany | Minutes | Acceptable |
+| execute_batch | 30-60s | Good |
+| COPY | 5-10s | Best |
+
+### Best Practices for Bulk Inserts
+
+1. **Use COPY for large datasets**: Fastest method, bypasses query parsing
+2. **Disable indexes temporarily**: Drop indexes before insert, recreate after
+3. **Use transactions**: Wrap inserts in single transaction
+4. **Adjust batch size**: Balance memory usage vs performance (1000-10000)
+5. **Disable autocommit**: Manual commit after batch completion
+
+### Optimized Example with All Best Practices
+```python
+import psycopg2
+from io import StringIO
+import time
+
+conn = psycopg2.connect(
+    host="localhost",
+    database="testdb",
+    user="postgres",
+    password="password"
+)
+conn.autocommit = False
+cursor = conn.cursor()
+
+# Drop indexes
+cursor.execute("DROP INDEX IF EXISTS idx_users_email")
+
+start = time.time()
+
+# Generate and insert data using COPY
+csv_data = StringIO()
+for i in range(1000000):
+    csv_data.write(f"User{i},user{i}@example.com,{25 + (i % 50)}\n")
+csv_data.seek(0)
+
+cursor.copy_from(csv_data, 'users', columns=('name', 'email', 'age'), sep=',')
+conn.commit()
+
+print(f"Insert time: {time.time() - start:.2f}s")
+
+# Recreate indexes
+start = time.time()
+cursor.execute("CREATE INDEX idx_users_email ON users(email)")
+conn.commit()
+print(f"Index creation time: {time.time() - start:.2f}s")
+
+cursor.close()
+conn.close()
+```
+
 ## Conclusion
 
 Choose based on your specific requirements:
@@ -142,3 +310,4 @@ Choose based on your specific requirements:
 - **Small datasets + need for speed** → Client-side cursors
 - **High concurrency** → Client-side cursors (less server load)
 - **Streaming/pagination** → Server-side cursors
+- **Bulk inserts** → Use COPY with client-side cursor
